@@ -1,0 +1,402 @@
+# Ce fichier contient des commandes pour configurer un réseau sur du matériel CISCO.
+# Avant de commancer il est préférable de prendre connaissance du README.md.
+
+####################################################
+# Matériels :
+# 1x Router 1941 (FAI)
+# 2x Router 1841 (NANTERRE / PARIS)
+# 3x Switch 2960
+# 5x Server
+# 4x PC
+####################################################
+
+# Sur les trois routeurs, nous allons devoir faire une modification des composants physiques. 
+# Pour cela, nous allons éteindre les routeurs, puis ajouter une interface HWIC-2T dans le port le plus à droite. 
+
+# Pour mes liens WAN, j'ai utilisé un câble Serial DTE, que j’ai connecté comme suite. 
+# NANTERRE (DTE) s0/0/0 ---> s0/0/0 (DCE) FAI
+# PARIS (DTE) s0/0/0 ---> s0/0/1 (DCE) FAI
+
+# SRV_INET <-> g0/0 FAI
+# IP
+1.1.1.1
+# Masque
+255.255.255.252
+# GW 
+1.1.1.2
+# DNS 
+127.0.0.1
+
+# FAI
+hostname FAI # je change le nom du RT
+int g0/0 # je sélectionne l’interface
+ip add 1.1.1.2 255.255.255.252  # masque en /30 (généralement pour une connexion point à point). 
+no shut # on active l'interface
+
+int s0/0/0
+clock rate 4000000 # Définit une vitesse d'horloge de **4 Mbps** sur un lien **DCE**.
+ip add 1.0.0.2 255.255.255.248 #  masque de /29 permettant 6 adresses utilisables.
+no shut
+
+int s0/0/1
+clock rate 4000000
+ip add 2.0.0.2 255.255.255.252
+no shut
+
+# Maintenant nous allons passer au lien LAN. 
+# Voici les connexions : 
+# NANTERRE f0/0 <> f0/24 SWT 192.168.92.0/24
+# NANTERRE f0/1 <> f0/24 SWT Private DMZ
+# PARIS f0/0 <> f0/24 SWT 192.168.75.0/24
+
+#Configuration RT Nanterre 
+hostname NANTERRE  # Je donne le nom "NANTERRE" au routeur
+ip host paris 2.0.0.1  # J'associe le nom "paris" à l'adresse IP 2.0.0.1
+interface FastEthernet0/0  # Je sélectionne l'interface FastEthernet0/0
+description LAN  # J'ajoute une description indiquant que cette interface est pour le réseau local
+ip addr 192.168.92.254 255.255.255.0  # J'attribue l'adresse IP 192.168.92.254 avec un masque /24
+no shut  # J'active l'interface
+
+interface FastEthernet0/1  # Je sélectionne l'interface FastEthernet0/1
+description DMZ  # J'ajoute une description indiquant que cette interface est pour la zone démilitarisée (DMZ)
+ip addr 192.168.0.254 255.255.255.0  # J'attribue l'adresse IP 192.168.0.254 avec un masque /24
+no shut  # J'active l'interface
+
+interface Serial0/0/0  # Je sélectionne l'interface série 0/0/0
+description WAN  # J'ajoute une description indiquant que cette interface est pour le réseau étendu (WAN)
+ip addr 1.0.0.1 255.255.255.248  # J'attribue l'adresse IP 1.0.0.1 avec un masque /29
+no shut  # J'active l'interface
+
+ip route 0.0.0.0 0.0.0.0 1.0.0.2  # Je configure une route par défaut via 1.0.0.2 (passerelle WAN)
+
+#Maintenant je fais pareil pour le RT PARIS
+hostname PARIS
+ip host nanterre 1.0.0.1
+
+int f0/0
+description LAN
+ip add 192.168.75.254 255.255.255.0
+no shut
+
+int s0/0/0
+description WAN
+ip add 2.0.0.1 255.255.255.252
+no shut
+ip route 0.0.0.0 0.0.0.0 2.0.0.2
+
+#############################################################################
+#Je configure maintenant mes deux SRV qui seront dans ma DMZ
+#############################################################################
+
+# SRV1
+192.168.0.100 #IP
+255.255.255.0 #Masque
+192.168.0.254#GW
+1.1.1.1 # DNS
+
+# SRV2
+192.168.0.200 # IP
+255.255.255.0 # Masque
+192.168.0.254 # GW
+1.1.1.1 # DNS
+
+#############################################################################
+#Je vais ensuite configurer mes PC qui seront dans le de NANTERRE
+#############################################################################
+
+# PC1
+192.168.92.1
+255.255.255.0
+192.168.92.254
+1.1.1.1
+
+# PC2
+192.168.92.2
+255.255.255.0
+192.168.92.254
+1.1.1.1
+
+# PC3
+192.168.92.3
+255.255.255.0
+192.168.92.254
+1.1.1.1
+
+#############################################################################
+#Je fais la même chose pour les équipements du réseau de PARIS. 
+#############################################################################
+
+# PC4
+192.168.75.1
+255.255.255.0
+192.168.75.254
+1.1.1.1
+
+# SRV3
+192.168.75.100
+255.255.255.0
+192.168.75.254
+1.1.1.1
+
+# SRV4
+192.168.75.200
+255.255.255.0
+192.168.75.254
+1.1.1.1
+
+# Sur le RT NANTERRE : 
+ip nat inside source static 192.168.0.100 1.0.0.3 # je dis que le SRV du LAN 192.168.0.100 sort sur internet avec 1.0.0.3
+ip nat inside source static 192.168.0.200 1.0.0.4 #  je dis que le SRV du LAN 192.168.0.200 sort sur internet avec 1.0.0.4
+int f0/0  # Je sélectionne l'interface
+ip nat inside  # Je dis que c’est une interface côté interne du NAT
+
+int f0/1  # Je sélectionne l'interface 
+ip nat inside  # Je dis que c’est une interface côté interne du NAT
+
+int S0/0/0  # Je sélectionne l'interface Serial0/0/0
+ip nat outside  # Je dis que c’est une interface côté externe du NAT
+
+#Je vérifie que la connexion NAT fonctionne en faisant un ping vers Internet représenté par mon SRV INET. 
+ping 1.1.1.1 # connexion OK
+
+#Je fais pareil depuis INET. Je n’oublie pas que j’ai assigné une l’IP NAT 1.0.0.3 au SRV_1.
+ping 1.0.0.3 # connexion OK
+
+#############################################################################
+#Sur le RT NANTERRE, je vais créer une ACL standard pour autoriser le trafic vers l’extérieur du réseau NANTERRE. 
+#############################################################################
+
+access-list 1 permit 192.168.92.0 0.0.0.255 # J'autorise le réseau 192.168.92.0/24 dans l’ACL numéro 1  
+
+ip nat pool DYN1 1.0.0.5 1.0.0.6 netmask 255.255.255.248 # Je crée un pool pour le NAT avec les 3 IP (1.0.0.5 à 0.6) UN masque en 29, car je veux mettre toutes les IP en 10.0.0.3 à 0.7
+ip nat inside source list 1 pool DYN1  # Je dis que je fais du NAT sur les adresses source et je désigne l’ACL 1 puis nomme le pool d’adresse qui contient l'adresse publique. 
+
+# Après avoir autorisé les ip de mon réseau de NANTERRE à sortir sur Internet, je peux faire le test. 
+
+# Depuis PC1, PC2 et PC3
+ping 1.1.1.1 # connexion OK
+
+#Attention : Les PC pourront sortir sur Internet que 2 par 2, car il y a 2 IP publiques dans le pool du NAT dynamique. 
+#Faites-le test : ping 1.1.1.1 avec les trois PC en même temps. 
+
+
+#############################################################################
+#Je fais pareil sur le RT PARIS 
+#############################################################################
+
+access-list 1 permit 192.168.75.0 0.0.0.255  # J'autorise le réseau 192.168.75.0/24 dans l’ACL numéro 1  
+
+ip nat inside source list 1 int s0/0/0 overload  # J'active le NAT dynamique (PAT) en utilisant l'interface s0/0/0 comme adresse de sortie  
+
+int f0/0  
+ip nat inside  # Je dis que cette interface est du côté interne du NAT  
+
+int s0/0/0  
+ip nat outside  # Je dis que cette interface est du côté externe du NAT  
+
+#############################################################################
+# Comme pour le réseau de NANTERRE je fais les tests pour le réseau de PARIS. 
+# Dans ce cas tous nos clients peuvent ping en même temps internet. 
+#############################################################################
+
+# Depuis PC4, SRV3 et SRV4
+ping -t 1.1.1.1 # connexion OK
+
+# Sur le SRV PARIS, je vais NAT différemment .
+ip nat inside source static tcp 192.168.75.100 80 2.0.0.1 80 # pour HTTP (port par défaut)
+ip nat inside source static tcp 192.168.75.100 443 2.0.0.1 443 # pour HTTPS (port par défaut)
+
+#Pour une "Sécurité" en plus, nous pouvons imaginer changer le port par défaut et donner cette information aux personnes que l'on souhaite.
+#Exemple ci-dessous, pour accèder au SRV4 depuis le WAN, il faudra taper l’IP + le port. 
+#Pour le SRV3, pas besoin de mettre le port, car ce sont des ports par défaut, donc l’accès se fera normalement.
+
+ip nat inside source static tcp 192.168.75.200 80 2.0.0.1 8080 # pour HTTP (changement de port)
+ip nat inside source static tcp 192.168.75.200 443 2.0.0.1 444 # pour HTTPS (changement de port)
+
+
+#############################################################################
+#Je vais créer un tunnel entre NANTERRE et PARIS afin de rendre l’échange de paquets plus sécurisé. 
+#############################################################################
+
+
+# NANTERRE
+int tunnel 1 #création du tunnel 1
+ip add 10.0.0.1 255.255.255.252 # je lui assigne une IP
+tunnel source s0/0/0 # de où il part
+tunnel destin 2.0.0.1 # de où il arrive
+ip route 192.168.75.0 255.255.255.0 10.0.0.2 #Je créer la route pour aller jusque PARIS
+
+# PARIS
+int tunnel 1
+ip add 10.0.0.2 255.255.255.252
+tunnel source s0/0/0
+tunnel destin 1.0.0.1
+ip route 192.168.0.0 255.255.255.0 10.0.0.1
+ip route 192.168.92.0 255.255.255.0 10.0.0.1
+
+#On teste que le réseau 75 a accès au réseau 92 et à la DMZ
+
+Depuis PC4
+ping 192.168.92.1 = OK
+ping 192.168.0.100 = OK
+ping 192.168.0.200 = OK
+
+#############################################################################
+#On passe à la partie IPSec
+#############################################################################
+
+# Pour RT NANTERRE
+access-list 100 permit ip host 1.0.0.1 host 2.0.0.1  # Définition d'une ACL pour spécifier le trafic à chiffrer
+crypto isakmp policy 1  # Création d'une politique ISAKMP (phase 1)
+encryption aes  # Utilisation d'AES pour le chiffrement
+hash sha  # Utilisation de SHA pour l'intégrité des données
+authentication pre-share  # Authentification par clé pré-partagée (PSK)
+group 5  # Utilisation du groupe Diffie-Hellman 5 pour l'échange de clés
+lifetime 3600  # Définition d'une durée de vie de 3600 secondes pour la phase 1
+
+crypto isakmp key GREoIPSecPSK1 address 2.0.0.1  # Définition de la clé pré-partagée pour le pair distant
+crypto ipsec security-association lifetime seconds 1800  # Durée de vie des associations de sécurité IPsec
+crypto ipsec transform-set NANTERRE-PARIS-Set esp-aes esp-sha-hmac  # Définition du transform-set avec AES et SHA
+crypto map NANTERRE-PARIS-Map 10 ipsec-isakmp  # Création de la carte crypto associée à IPsec
+
+set peer 2.0.0.1  # Définition du pair distant
+set security-association lifetime seconds 900  # Durée de vie des SA IPsec pour cette carte crypto
+set transform-set NANTERRE-PARIS-Set  # Association du transform-set à la carte crypto
+match address 100  # Association de l'ACL 100 pour définir le trafic sécurisé
+
+int s0/0/0  # Sélection de l'interface série
+crypto map NANTERRE-PARIS-Map  # Application de la carte crypto sur l'interface
+
+
+#Pareil pour RT PARIS
+
+access-list 100 permit ip host 2.0.0.1 host 1.0.0.1
+crypto isakmp policy 1
+encr aes
+hash sha
+authentication pre-share
+group 5
+lifetime 3600
+
+crypto isakmp key GREoIPSecPSK1 address 1.0.0.1
+crypto ipsec security-association lifetime seconds 1800
+crypto ipsec transform-set PARIS-NANTERRE-Set esp-aes esp-sha-hmac
+crypto map PARIS-NANTERRE-Map 10 ipsec-isakmp
+
+set peer 1.0.0.1
+set security-association lifetime seconds 900
+set transform-set PARIS-NANTERRE-Set
+match address 100
+
+int s0/0/0
+crypto map PARIS-NANTERRE-Map
+
+######################################################################################
+# Dans la prochaine étape la consigne est de rendre la DMZ privée en DMZ public
+# Pour cela nous allons supprimer le NAT static et le NAT dynamique 
+######################################################################################
+
+# Suppression d'une règle NAT statique
+# Cette règle permettait d'accéder à 192.168.0.100 depuis l'extérieur via 1.0.0.3
+no ip nat inside source static 192.168.0.100 1.0.0.3  
+
+# Suppression d'une autre règle NAT statique
+# Cette règle permettait d'accéder à 192.168.0.200 via l'adresse publique 1.0.0.4
+no ip nat inside source static 192.168.0.200 1.0.0.4  
+
+# Suppression de la NAT dynamique associée à la liste d'accès 1 et au pool DYN1
+no ip nat inside source list 1 pool DYN1  
+
+# Suppression du pool d'adresses NAT nommé DYN1
+no ip nat pool DYN1  
+
+# Suppression de la liste d'accès 1 utilisée pour la NAT
+no access-list 1  
+
+# Suppression de la configuration NAT sur l'interface FastEthernet 0/0
+int f0/0  
+no ip nat inside  
+
+
+int f0/1  
+no ip nat inside  
+
+
+int s0/0/0  
+no ip nat outside  
+
+
+# Modifier le masque du réseau WAN entre NANTERRE et FAI
+
+# NANTERRE
+int s0/0/0
+ip add 1.0.0.1 255.255.255.252
+
+# FAI
+int s0/0/0
+ip add 1.0.0.2 255.255.255.252
+
+# Modifier l'adressage IP de l'interface connectée à  la DMZ
+
+# NANTERRE
+int f0/1
+ip add 3.0.0.6 255.255.255.248
+
+
+###############################################################################
+# Créer un PAT sur NANTERRE pour le réseau 192.168.92.0/24
+###############################################################################
+
+# NANTERRE
+
+# Configure la translation NAT dynamique (PAT) pour les adresses de la liste 1
+# Utilise l'interface s0/0/0 pour la traduction avec une adresse publique
+# "overload" permet de partager une seule adresse publique pour plusieurs connexions internes
+ip nat inside source list 1 int s0/0/0 over
+int f0/0
+ip nat inside # je dis que l’interface f0/0 fait partie du réseau interne NAT
+int s0/0/0
+ip nat outside # je dis que l’interface s0/0/0 fait partie du réseau externe NAT
+
+
+###############################################################################
+# Remplacer la route qui permettait de joindre la DMZ privée depuis Paris en passant par le tunnel. 
+# De cette façon on pourra joindre la DMZ public de la même manière.
+###############################################################################
+
+# PARIS
+no ip route 192.168.0.0 255.255.255.0
+ip route 3.0.0.0 255.255.255.248 10.0.0.1
+
+# Phase de test : Depuis PC4 
+
+ping 1.1.1.1 
+ping 192.168.92.1 
+
+# Phase de test : Depuis SRV1 et SRV2
+
+ping 192.168.75.1
+ping 192.168.92.1
+
+# Les deux ping précédents doivent fonctionner
+
+ping 1.1.1.1
+
+# Ce dernier ping ne va pas fonctionner pour le moment
+
+# On ne peut pas joindre SRV1 et SRV2 depuis Internet avec la nouvelle config.
+
+# Pourquoi ?
+# On a une DMZ publique, SRV1 et SRV2 ont une IP publique.
+# J'ai acheté le réseau 3.0.0.0/29 à mon FAI.
+
+# Le FAI doit maintenant créer une route qui indique comment joindre ce sous-réseau.
+# Et il va annoncer cette route sur Internet.
+
+#FAI
+ip route 3.0.0.0 255.255.255.248 1.0.0.1
+
+
+
+
+
