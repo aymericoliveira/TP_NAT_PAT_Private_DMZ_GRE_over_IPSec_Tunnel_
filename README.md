@@ -40,7 +40,7 @@ Le projet est composé des fichiers suivants :
 
 * **`README.md`** : Ce fichier contient des informations sur le projet et les instructions.
 
-* **`commandes_show_rt_swt_cisco`** : Ce fichier contient les commandes show les plus utilisées chez Cisco. 
+* **`commandes_show_rt_swt_cisco.md`** : Ce fichier contient les commandes show les plus utilisées chez Cisco. 
 
 ## **Licence**
 
